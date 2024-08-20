@@ -1,0 +1,7 @@
+weibo:
+  start_time: "2020-05-11-10"
+  end_time: "2023-08-14-10"
+douyin:
+  publish_time: 0 # 0：不限时间  1：一天内  7：一周内  182：半年内
+  sort_type: 0 # 0：综合排序  1：最多点赞 2：最新发布
+  is_filter_search: 0 # 0：不筛选  1：筛选
