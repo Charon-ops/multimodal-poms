@@ -94,7 +94,8 @@ class KuaishouCommentCrawler:
             if json_data == None or pcursor == 'no_more':
                 break
             for video_data in json_data:
-                print(f"开始爬取 {video_data['photo']['caption'].strip().replace('\n', ''),} 的评论\n")
+                photo_caption = video_data['photo']['caption'].strip().replace('\n', '')
+                print(f"开始爬取 {photo_caption} 的评论\n")
                 video_id = video_data['photo']['id']
                 check_path(f'{self.save_path}/{video_id}')
                 with open(f'{self.save_path}/{video_id}/{video_id}_comment.csv', 'wb') as file:
@@ -107,7 +108,8 @@ class KuaishouCommentCrawler:
                     save_to_csv(self.data_accumulator, f'{self.save_path}/{self.keyword}_comment.csv', self.columns)
                     save_to_csv(self.data_accumulator, f'{self.save_path}/{video_id}/{video_id}_comment.csv', self.columns)
                     self.data_accumulator = []
-                print(f"{video_data['photo']['caption'].strip().replace('\n', ''),} 的评论爬取完毕\n")
+                photo_caption = video_data['photo']['caption'].strip().replace('\n', '')
+                print(f"{photo_caption} 的评论爬取完毕\n")
                 await asyncio.sleep(1)
                 self.video_count += 1
 

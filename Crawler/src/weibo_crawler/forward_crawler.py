@@ -13,7 +13,7 @@ from typing import Dict
 import asyncio
 from playwright.async_api import async_playwright, BrowserContext
 from lib.utils import get_headers, get_data, check_path
-from user_crawler import is_fans
+from .user_crawler import is_fans
 
 def time_formater(input_time_str):
     input_format = '%a %b %d %H:%M:%S %z %Y'
@@ -255,18 +255,18 @@ class WeiboForwardCrawler:
         if not self.keyword:
             print("run after set")
             return
-        file_path = f'{save_path}/{keyword}/{keyword}.csv'
-        if not os.path.exists(file_path):
-            print("run after get topic csv file")
-            return
-        print(u'\n----------------------------------------------------------------\n')
         if keyword is None:
             keyword = self.keyword
         if save_path is None:
             save_path = self.save_path
         if cookie is None:
             cookie = self.cookie
-        path = f'{save_path}/{keyword}/comment'
+        file_path = f'{save_path}/{keyword}.csv'
+        if not os.path.exists(file_path):
+            print("run after get topic csv file")
+            return
+        print(u'\n----------------------------------------------------------------\n')
+        path = f'{save_path}/forward'
         df = pd.read_csv(file_path)
         num = 0
         for index, row in df.iterrows():

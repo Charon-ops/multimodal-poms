@@ -2,7 +2,7 @@ import urllib.parse
 from typing import Dict, List
 import asyncio
 from playwright.async_api import async_playwright, BrowserContext
-from lib.utils import get_time, get_data, get_headers, load_config, get_x_bogus, check_path, save_to_csv, splice_url
+from lib.utils import get_time, get_data, get_headers, load_config, get_x_bogus, check_path, save_to_csv, splice_url, validate_or_default
 
 
 class DouyinUserCrawler:
@@ -10,217 +10,345 @@ class DouyinUserCrawler:
         self.headers: Dict
         self.keyword: str
         self.save_path: str
-        self.user_count: int = 0
-        self.video_count: int = 0
-        self.context: BrowserContext
-        self.data_accumulator: List = []
         self.user_columns: List
         self.video_columns: List
+        self.context: BrowserContext
+        self.user_count: int = 0
+        self.video_count: int = 0
+        self.user_video_count: int = 0
+        self.data_accumulator: List = []
 
     def set(self, keyword: str, save_path: str, cookie: str) -> None:
+        if not keyword or not save_path or not cookie:
+            self.keyword = self.save_path = self.headers = None
+            return
         self.keyword = keyword
         self.save_path = save_path + f'/douyin/{keyword}'
         self.headers = get_headers(cookie, 'dy')
+
         self.user_columns = ["用户名", "用户主页", "抖音号", "关注数", "粉丝数", "获赞数", "作品数", "喜欢数", "性别", "年龄", "IP属地", "籍贯", "企业认证", "学校", "签名"]
         self.video_columns = ["视频描述", "视频链接", "发表时间", "视频时长", "点赞数量", "评论数量", "收藏数量", "分享数量"]
 
     async def save_user_data(self, user_data: Dict, sec_uid: str) -> None:
         try:
-            user_name = user_data['nickname'].strip()
-        except:
-            user_name = '无'
+            user_name = user_data.get('nickname', '无').strip()
+            unique_id = user_data.get('unique_id', '未知')
+            following_count = user_data.get('following_count', 0)
+            follower_count = user_data.get('follower_count', 0)
+            total_favorited = user_data.get('total_favorited', 0)
+            aweme_count = user_data.get('aweme_count', 0)
+            favoriting_count = '不可见' if user_data.get('favorite_permission', 0) == 1 else user_data.get('favoriting_count', '不可见')
+            gender = '男' if user_data.get('gender') == 1 else '女' if user_data.get('gender') == 2 else '未知'
+            user_age =  user_data.get('user_age', '未知')
+            ip_location =  user_data.get('ip_location', '未知')
 
-        try:
-            favoriting_count = '不可见' if user_data['favorite_permission'] == 1 else user_data['favoriting_count']
-        except:
-            favoriting_count = '不可见'
+            country = user_data.get('country', '').strip()
+            province = user_data.get('province', '').strip()
+            city = user_data.get('city', '').strip()
 
-        try:
-            user_age = '未知' if user_data['user_age'] == '' else user_data['user_age']
-        except:
-            user_age = '未知'
+            enterprise_verify_reason = user_data.get('enterprise_verify_reason', '无')
+            school_name = user_data.get('school_name', '无')
+            signature = user_data.get('signature', '').strip().replace('\n', '')
 
-        try:
-            ip_location = '未知' if user_data['ip_location'] == '' else user_data['ip_location']
-        except:
-            ip_location = '未知'
+            user_data_dict = {
+                "用户名": user_name,
+                "用户主页": f"https://www.douyin.com/user/{sec_uid}",
+                "抖音号" : unique_id,
+                "关注数": following_count,
+                "粉丝数": follower_count,
+                "获赞数": total_favorited,
+                "作品数": aweme_count,
+                "喜欢数": favoriting_count,
+                "性别": gender,
+                "年龄": user_age,
+                "IP属地": ip_location,
+                "籍贯": f"{country} {province} {city}",
+                "企业认证": enterprise_verify_reason,
+                "学校": school_name,
+                "签名": signature,
+            }
 
-        user_data_dict = {
-            "用户名": user_name,
-            "用户主页": f"https://www.douyin.com/user/{sec_uid}",
-            "抖音号" : user_data['unique_id'],
-            "关注数": user_data['following_count'],
-            "粉丝数": user_data['follower_count'],
-            "获赞数": user_data['total_favorited'],
-            "作品数": user_data['aweme_count'],
-            "喜欢数": favoriting_count,
-            "性别": '男' if user_data['gender'] == 1 else '女' if user_data['gender'] == 2 else '未知',
-            "年龄": user_age,
-            "IP属地": ip_location,
-            "籍贯": f"{user_data['country'].strip()} {user_data['province'].strip()} {user_data['city'].strip()}",
-            "企业认证": user_data['enterprise_verify_reason'],
-            "学校": user_data['school_name'],
-            "签名": user_data['signature'].strip().replace('\n', ''),
-        }
+            self.user_count += 1
 
-        self.user_count += 1
+            print(f"当前用户数量: {self.user_count}\n",
+                f"用户名：{user_data_dict['用户名']}\n",
+                f"用户主页：{user_data_dict['用户主页']}\n",
+                f"抖音号：{user_data_dict['抖音号']}\n",
+                f"关注数：{user_data_dict['关注数']}\n",
+                f"粉丝数：{user_data_dict['粉丝数']}\n",
+                f"获赞数：{user_data_dict['获赞数']}\n",
+                f"作品数：{user_data_dict['作品数']}\n",
+                f"喜欢数：{user_data_dict['喜欢数']}\n",
+                f"作品数：{user_data_dict['作品数']}\n",
+                f"性别：{user_data_dict['性别']}\n",
+                f"年龄：{user_data_dict['年龄']}\n",
+                f"IP属地：{user_data_dict['IP属地']}\n",
+                f"籍贯：{user_data_dict['籍贯']}\n",
+                f"企业认证：{user_data_dict['企业认证']}\n",
+                f"学校：{user_data_dict['学校']}\n",
+                f"签名：{user_data_dict['签名']}\n"
+                )
 
-        print(f"当前用户数量: {self.user_count}\n",
-          f"用户名：{user_data_dict['用户名']}\n",
-          f"用户主页：{user_data_dict['用户主页']}\n",
-          f"抖音号：{user_data_dict['抖音号']}\n",
-          f"关注数：{user_data_dict['关注数']}\n",
-          f"粉丝数：{user_data_dict['粉丝数']}\n",
-          f"获赞数：{user_data_dict['获赞数']}\n",
-          f"作品数：{user_data_dict['作品数']}\n",
-          f"喜欢数：{user_data_dict['喜欢数']}\n",
-          f"作品数：{user_data_dict['作品数']}\n",
-          f"性别：{user_data_dict['性别']}\n",
-          f"年龄：{user_data_dict['年龄']}\n",
-          f"IP属地：{user_data_dict['IP属地']}\n",
-          f"籍贯：{user_data_dict['籍贯']}\n",
-          f"企业认证：{user_data_dict['企业认证']}\n",
-          f"学校：{user_data_dict['学校']}\n",
-          f"签名：{user_data_dict['签名']}\n"
-          )
+            file_name = f'{self.save_path}/{self.keyword}_user_infos.csv'
+            await save_to_csv(user_data_dict, file_name, self.user_columns)
 
-        file_name = f'{self.save_path}/{self.keyword}_user_infos.csv'
-        save_to_csv(user_data_dict, file_name, self.user_columns)
+        except Exception as e:
+            print(f"处理用户数据时出错: {e}")
 
     async def save_video_info(self, video_data: Dict, sec_uid: str) -> None:
-        minutes = video_data['video']['duration'] // 1000 // 60
-        seconds = video_data['video']['duration'] // 1000 % 60
+        try:
+            create_time = get_time(video_data.get('create_time', 0))
+            video_desc = video_data.get('desc', '').strip().replace('\n', '')
 
-        video_dict = {
-            "视频描述": video_data['desc'].strip().replace('\n', ''),
-            "视频链接": f"https://www.douyin.com/video/{video_data['aweme_id'].strip()}",
-            "发表时间": get_time(video_data['create_time']),
-            "视频时长": "{:02d}:{:02d}".format(minutes, seconds),
-            "点赞数量": video_data['statistics']['digg_count'],
-            "收藏数量": video_data['statistics']['collect_count'],
-            "评论数量": video_data['statistics']['comment_count'],
-            "分享数量": video_data['statistics']['share_count'],
-        }
+            aweme_id = video_data.get('aweme_id').strip()
+            video_link = f"https://www.douyin.com/video/{aweme_id}" if aweme_id else '视频ID缺失，无法生成视频链接'
 
-        self.video_count += 1
+            duration = video_data.get('video', {}).get('duration', 0)
+            minutes = duration // 1000 // 60
+            seconds = duration // 1000 % 60
 
-        print(f"当前获取用户主页视频数量: {self.video_count}\n",
-            f"视频描述：{video_dict['视频描述']}\n",
-            f"视频链接：{video_dict['视频链接']}\n",
-            f"发表时间：{video_dict['发表时间']}\n",
-            f"视频时长：{video_dict['视频时长']}\n",
-            f"点赞数量：{video_dict['点赞数量']}\n",
-            f"评论数量：{video_dict['评论数量']}\n",
-            f"收藏数量：{video_dict['收藏数量']}\n",
-            f"分享数量：{video_dict['分享数量']}\n"
-            )
+            statistics = video_data.get('statistics', {})
+            digg_count = statistics.get('digg_count', 0)
+            collect_count = statistics.get('collect_count', 0)
+            comment_count = statistics.get('comment_count', 0)
+            download_count = statistics.get('download_count', 0)
+            share_count = statistics.get('share_count', 0)
 
-        self.data_accumulator.append(video_dict)
-        if len(self.data_accumulator) >= 30:
-            file_name = f"{self.save_path}/user_video_infos/{sec_uid}_videos.csv"
-            save_to_csv(self.data_accumulator, file_name, self.video_columns)
-            self.data_accumulator = []
+            video_dict = {
+                "视频描述": video_desc,
+                "视频链接": video_link,
+                "发表时间": create_time,
+                "视频时长": "{:02d}:{:02d}".format(minutes, seconds),
+                "点赞数量": digg_count,
+                "收藏数量": collect_count,
+                "评论数量": comment_count,
+                "下载数量": download_count,
+                "分享数量": share_count
+            }
 
-    async def get_user_video_data(self, max_cursor: int, sec_uid: str) -> List[Dict[str, any]]:
-        url = 'https://www.douyin.com/aweme/v1/web/aweme/post/?'
-        params = {
+            self.video_count += 1
+            self.user_video_count += 1
+            print(f"当前获取该用户主页视频数量: {self.user_video_count}\n",
+                f"当前获取总视频数量: {self.video_count}\n",
+                f"视频描述：{video_dict['视频描述']}\n",
+                f"视频链接：{video_dict['视频链接']}\n",
+                f"发表时间：{video_dict['发表时间']}\n",
+                f"视频时长：{video_dict['视频时长']}\n",
+                f"点赞数量：{video_dict['点赞数量']}\n",
+                f"评论数量：{video_dict['评论数量']}\n",
+                f"收藏数量：{video_dict['收藏数量']}\n",
+                f"下载数量：{video_dict['下载数量']}\n",
+                f"分享数量：{video_dict['分享数量']}\n"
+                )
+
+            self.data_accumulator.append(video_dict)
+            if len(self.data_accumulator) >= 30:
+                file_name = f"{self.save_path}/user_video_infos/{sec_uid}_videos.csv"
+                await save_to_csv(self.data_accumulator, file_name, self.video_columns)
+                self.data_accumulator = []
+
+        except Exception as e:
+            print(f"处理用户视频数据时出错: {e}")
+
+    async def get_user_video_data(self, max_cursor: int, sec_uid: str) -> Dict[str, any]:
+        try:
+            url = 'https://www.douyin.com/aweme/v1/web/aweme/post/?'
+            params = {
+                    'aid': 6383,
+                    'sec_user_id': sec_uid,
+                    'count': 18,
+                    'max_cursor': max_cursor,
+                    'cookie_enabled': 'true',
+                    'platform': 'PC',
+                    'downlink': 10,
+                }
+            user_video_url =  url + splice_url(params)
+            query = urllib.parse.urlparse(user_video_url).query
+            x_bogus = get_x_bogus(query)
+            user_video_url = user_video_url + '&X-Bogus=' + x_bogus
+
+            await asyncio.sleep(4)
+            json_data = await get_data(context=self.context, url=user_video_url, headers=self.headers)
+            return json_data
+        except Exception as e:
+            print(f"获取用户视频数据时发生错误 (sec_uid: {sec_uid}, max_cursor: {max_cursor}): {e}")
+            return {}
+
+    async def get_user_data(self, sec_uid: str) -> Dict[str, any]:
+        try:
+            url = 'https://www.douyin.com/aweme/v1/web/user/profile/other/?'
+            params = {
                 'aid': 6383,
                 'sec_user_id': sec_uid,
-                'count': 18,
-                'max_cursor': max_cursor,
                 'cookie_enabled': 'true',
                 'platform': 'PC',
                 'downlink': 10,
             }
-        user_video_url =  url + splice_url(params)
-        query = urllib.parse.urlparse(user_video_url).query
-        x_bogus = get_x_bogus(query)
-        user_video_url = user_video_url + '&X-Bogus=' + x_bogus
+            user_url =  url + splice_url(params)
+            query = urllib.parse.urlparse(user_url).query
+            x_bogus = get_x_bogus(query)
+            user_url = user_url + '&X-Bogus=' + x_bogus
 
-        await asyncio.sleep(4)
-        json_data = await get_data(self.context, user_video_url, self.headers)
-        return json_data
+            await asyncio.sleep(4)
+            json_data = await get_data(context=self.context, url=user_url, headers=self.headers)
+            return json_data
+        except Exception as e:
+            print(f"获取用户数据时发生错误 (sec_uid: {sec_uid}): {e}")
+            return {}
 
-    async def get_user_data(self, sec_uid: str) -> List[Dict[str, any]]:
-        url = 'https://www.douyin.com/aweme/v1/web/user/profile/other/?'
-        params = {
-            'aid': 6383,
-            'sec_user_id': sec_uid,
-            'cookie_enabled': 'true',
-            'platform': 'PC',
-            'downlink': 10,
-        }
-        user_url =  url + splice_url(params)
-        query = urllib.parse.urlparse(user_url).query
-        x_bogus = get_x_bogus(query)
-        user_url = user_url + '&X-Bogus=' + x_bogus
-
-        await asyncio.sleep(4)
-        json_data = await get_data(self.context, user_url, self.headers)
-        return json_data
-
-    async def search_keyword(self, offset: int) -> List[Dict[str, any]]:
+    async def search_keyword(self, offset: int=0) -> Dict[str, any]:
         url = 'https://www.douyin.com/aweme/v1/web/search/item/?'
         config = load_config()
         douyin_config = config.get('douyin', {})
+        is_filter_search = douyin_config.get('is_filter_search')
+        is_filter_search = validate_or_default(is_filter_search, valid_options=[0, 1], default=0)
+        publish_time = douyin_config.get('publish_time')
+        publish_time = validate_or_default(publish_time, valid_options=[0, 1, 7, 182], default=0)
+        sort_type = douyin_config.get('sort_type')
+        sort_type = validate_or_default(sort_type, valid_options=[0, 1, 2], default=0)
         params = {
             'aid': 6383,
             'channel': 'channel_pc_web',
             'search_channel': 'aweme_video_web',
             'keyword': self.keyword,
             'offset': offset,
-            'is_filter_search': douyin_config.get('is_filter_search'),
-            'publish_time': douyin_config.get('publish_time'),
-            'sort_type': douyin_config.get('sort_type'),
+            'is_filter_search': is_filter_search,
+            'publish_time': publish_time,
+            'sort_type': sort_type,
             'count': 16 if offset == 0 else 10,
         }
         await asyncio.sleep(4)
-        json_data = await get_data(self.context, url, self.headers, params)
-        return json_data
+        try:
+            json_data = await get_data(context=self.context, url=url, headers=self.headers, params=params)
+            return json_data
+        except asyncio.TimeoutError:
+            print("请求超时")
+            return {}
+        except Exception as e:
+            print(f"发生错误: {e}")
+            return {}
 
     async def fetch(self,start_offset: int=0) -> None:
         offset = start_offset
         count = 16 if offset == 0 else 10
         while True:
-            json_data = await self.search_keyword(offset)
-            for video_data in json_data['data']:
-                print(f"开始爬取 {video_data['aweme_info']['desc'].strip().replace('\n', ''),} 的用户信息\n")
-                sec_uid = video_data['aweme_info']['author']['sec_uid']
-                user_data = await self.get_user_data(sec_uid)
-                await self.save_user_data(user_data['user'])
+            try:
+                json_data = await self.search_keyword(offset)
+                video_data_dict = json_data.get('data')
+                if not video_data_dict:
+                    print(f"未获取到有效的视频数据 (offset: {offset})")
+                    offset += count
+                    count = 10
+                    continue
+                for video_data in video_data_dict:
+                    try:
+                        if not video_data or 'aweme_info' not in video_data or not video_data['aweme_info']:
+                            print("视频数据无效或缺少 aweme_info，跳过该条数据")
+                            continue
+                        aweme_info = video_data['aweme_info']
+                        if isinstance(aweme_info, dict):
+                            desc = aweme_info.get('desc', '').strip().replace('\n', '')
+                            print(f"开始爬取 {desc} 的用户信息\n")
+                            sec_uid = aweme_info.get('author',{}).get('sec_uid').strip()
+                            if not sec_uid:
+                                print(f"视频 {desc} 用户ID缺失，跳过该条数据")
+                                continue
+                        else:
+                            print(f"无效的视频信息数据类型：{aweme_info}")
+                            continue
 
-                print(f"正在爬取用户 sec_uid={sec_uid} 的主页视频数据\n")
-                max_cursor = 0
-                while True:
-                    user_video_data = await self.get_user_video_data(max_cursor, sec_uid)
-                    for video_data in user_video_data['aweme_list']:
-                        self.save_video_info(video_data, sec_uid)
-                    if user_video_data['has_more'] == 0:
-                        break
-                    max_cursor = user_video_data['max_cursor']
-                if self.data_accumulator:
-                    save_to_csv(self.data_accumulator, f"{self.save_path}/user_video_infos/{sec_uid}_videos.csv", self.video_columns)
-                    self.data_accumulator = []
+                        user_data = await self.get_user_data(sec_uid)
+                        user_data = user_data.get('user')
+                        if not user_data:
+                            print(f"没有用户数据 (sec_uid: {sec_uid})")
+                            continue
+                        if isinstance(user_data, dict):
+                            await self.save_user_data(user_data, sec_uid)
+                        else:
+                            print(f"无效的用户数据类型 (sec_uid: {sec_uid})：{user_data}")
+                            continue
 
-                print(f"{video_data['aweme_info']['desc'].strip().replace('\n', ''),} 的用户信息爬取完毕\n")
-                await asyncio.sleep(1)
-            if json_data['has_more'] == 0:
-                break
-            offset += count
-            count = 10
+                        print(f"正在爬取用户 sec_uid={sec_uid} 的主页视频数据\n")
+                        self.user_video_count = 0
+                        max_cursor = 0
+                        while True:
+                            try:
+                                user_video_data = await self.get_user_video_data(max_cursor, sec_uid)
+                                aweme_list = user_video_data.get('aweme_list')
+                                if not aweme_list:
+                                    print(f"未获取到有效的视频数据 (sec_uid: {sec_uid}, max_cursor: {max_cursor})")
+                                    max_cursor = user_video_data.get('max_cursor',0)
+                                    if max_cursor == 0:
+                                        break
+                                    continue
+                                if isinstance(aweme_list, dict):
+                                    for video_data in aweme_list:
+                                        if not video_data:
+                                            print(f"空的视频数据 (sec_uid: {sec_uid}, max_cursor: {max_cursor})：{video_data}")
+                                            continue
+                                        if isinstance(video_data, dict):
+                                            self.save_video_info(video_data, sec_uid)
+                                        else:
+                                            print(f"无效的视频数据类型 (sec_uid: {sec_uid}, max_cursor: {max_cursor})：{video_data}")
+                                            continue
+                                else:
+                                    print(f"无效的视频数据类型 (sec_uid: {sec_uid}, max_cursor: {max_cursor})：{aweme_list}")
+                                    max_cursor = user_video_data.get('max_cursor',0)
+                                    if max_cursor == 0:
+                                        break
+                                    continue
+                                if user_video_data['has_more'] == 0:
+                                    break
+                                max_cursor = user_video_data.get('max_cursor',0)
+                                if max_cursor == 0:
+                                    break
+                            except Exception as e:
+                                print(f"获取与保存用户 sec_uid={sec_uid} 的主页视频数据时出错 (max_cursor: {max_cursor}): {e}")
+                                continue
+                        if self.data_accumulator:
+                            try:
+                                await save_to_csv(self.data_accumulator, f"{self.save_path}/user_video_infos/{sec_uid}_videos.csv", self.video_columns)
+                                self.data_accumulator = []
+                            except Exception as e:
+                                print(f"保存用户视频数据到CSV时出错: {e}")
+                        print(f"{desc} 的用户信息爬取完毕\n")
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"处理视频数据时出错: {e}")
+                        continue
+                if json_data.get('has_more') == 0:
+                    break
+                offset += count
+                count = 10
+            except Exception as e:
+                print(f"获取关键词搜索数据时出错 (offset: {offset}): {e}")
+                offset += count
+                count = 10
+                continue
 
     async def run(self) -> None:
-        if not self.keyword:
-            print("run after set")
-            return
-        check_path(f'{self.save_path}')
-        with open(f"{self.save_path}/{self.keyword}_user_infos.csv", "w", encoding="utf-8-sig", newline="") as f:
-            pass
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            self.context = await browser.new_context()
-            await self.fetch()
-            await browser.close()
+        try:
+            if not self.keyword or not self.save_path or not self.headers:
+                print("请先设置关键字、保存路径和请求头。")
+                return
+            check_path(f'{self.save_path}')
+            try:
+                with open(f"{self.save_path}/{self.keyword}_user_infos.csv", "w", encoding="utf-8-sig", newline="") as f:
+                    pass
+            except Exception as e:
+                print(f"创建文件{self.save_path}/{self.keyword}_user_infos.csv时出错: {e}")
+                return
+            async with async_playwright() as p:
+                try:
+                    browser = await p.chromium.launch(headless=True)
+                    self.context = await browser.new_context()
+                    await self.fetch()
+                except Exception as e:
+                    print(f"浏览器启动或运行过程中出错: {e}")
+                finally:
+                    await browser.close()
+        except Exception as e:
+            print(f"运行过程中发生错误: {e}")
 
 if __name__ == '__main__':
     keyword = '张本智和发文回应败给樊振东'

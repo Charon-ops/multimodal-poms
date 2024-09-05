@@ -8,7 +8,7 @@ from typing import Dict
 import asyncio
 from playwright.async_api import async_playwright, BrowserContext
 from lib.utils import get_headers, get_data, check_path
-from user_crawler import is_fans
+from .user_crawler import is_fans
 
 def time_formater(input_time_str):
     input_format = '%a %b %d %H:%M:%S %z %Y'
@@ -30,7 +30,7 @@ class WeiboCommentCrawler:
         self.params: Dict
         self.limit: int = 1000000
         self.per_request_sleep_sec: int = 6
-        self.request_timeout: int = 10
+        self.request_timeout: int = 1000
         self.child_max_page: int = 5
         self.got_comments: Dict
         self.got_comments_num: int
@@ -55,9 +55,9 @@ class WeiboCommentCrawler:
         self.headers = get_headers(self.cookie,'wb_comment')
         if uid:
             self.params['uid'] = uid
-        if not str.isdigit(id):
-            id = mid2id(id)
         if id:
+            if not str.isdigit(id):
+                id = mid2id(id)
             self.params['id'] = id
         if limit:
             self.limit = limit
@@ -153,7 +153,7 @@ class WeiboCommentCrawler:
                 print(traceback.format_exc())
                 break
 
-            res_json = response.json()
+            res_json = response
             max_id = await self.parse(res_json, root_comment_id)
             if not max_id:
                 break
@@ -176,7 +176,7 @@ class WeiboCommentCrawler:
                 'isfan']
             result_data = [w.values()
                            for w in self.got_comments][self.written_comments_num:]
-            file_path = f'{self.save_path}/comment/{self.params['id']}.csv'
+            file_path = f"{self.save_path}/comment/{self.params['id']}.csv"
             with open(file_path, 'a', encoding='utf-8-sig', newline='') as (f):
                 writer = csv.writer(f)
                 if self.written_comments_num == 0:
@@ -228,7 +228,7 @@ class WeiboCommentCrawler:
 
         if self.got_comments_num > self.written_comments_num:
             self.write_csv()
-        file_path = f'{self.save_path}/comment/{self.params['id']}.csv'
+        file_path = f"{self.save_path}/comment/{self.params['id']}.csv"
         if os.path.exists(file_path):
             self.drop_duplicate(file_path, col_index=1)
 
@@ -244,7 +244,7 @@ class WeiboCommentCrawler:
             await self.fetch()
             await browser.close()
 
-    def get_filenames(path):
+    def get_filenames(self,path):
         if not os.path.exists(path):
             os.mkdir(path)
         filenames = [f[:-4] for f in os.listdir(path) if f.endswith('.csv')]
@@ -258,18 +258,18 @@ class WeiboCommentCrawler:
         if not self.keyword:
             print("run after set")
             return
-        file_path = f'{save_path}/{keyword}/{keyword}.csv'
-        if not os.path.exists(file_path):
-            print("run after get topic csv file")
-            return
-        print(u'\n----------------------------------------------------------------\n')
         if keyword is None:
             keyword = self.keyword
         if save_path is None:
             save_path = self.save_path
         if cookie is None:
             cookie = self.cookie
-        path = f'{save_path}/{keyword}/comment'
+        file_path = f'{save_path}/{keyword}.csv'
+        if not os.path.exists(file_path):
+            print("run after get topic csv file")
+            return
+        print(u'\n----------------------------------------------------------------\n')
+        path = f'{save_path}//comment'
         df = pd.read_csv(file_path)
         num = 0
         for index, row in df.iterrows():

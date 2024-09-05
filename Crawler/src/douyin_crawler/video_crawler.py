@@ -1,123 +1,220 @@
 import asyncio
+import aiofiles
 from playwright.async_api import async_playwright, BrowserContext
 from typing import Dict, List
-from lib.utils import get_time, get_data, get_headers, load_config, check_path, save_to_csv
+from lib.utils import get_time, get_data, get_headers, load_config, check_path, save_to_csv, validate_or_default
 
 class DouyinVideoCrawler:
     def __init__(self):
         self.headers: Dict
         self.keyword: str
         self.save_path: str
-        self.video_count: int = 0
-        self.context: BrowserContext
-        self.data_accumulator: List
         self.columns: List
+        self.context: BrowserContext
+        self.video_count: int = 0
+        self.data_accumulator: List = []
 
 
     def set(self, keyword: str, save_path: str, cookie: str):
+        if not keyword or not save_path or not cookie:
+            self.keyword = self.save_path = self.headers = None
+            return
         self.keyword = keyword
         self.save_path = save_path + f'/douyin/{keyword}'
         self.headers = get_headers(cookie, 'dy')
+
         self.columns = ["用户名", "粉丝数量", "发表时间", "视频描述", "视频链接", "视频时长", "点赞数量", "评论数量", "收藏数量", "下载数量", "分享数量"]
 
-    async def save_video_info(self, video_data: Dict) -> None:
-        minutes = video_data['video']['duration'] // 1000 // 60
-        seconds = video_data['video']['duration'] // 1000 % 60
+    async def save_video_info(self, video_data: Dict, aweme_id: str) -> None:
+        try:
+            author = video_data.get('author', {})
+            user_name = author.get('nickname', '未知').strip()
+            follower_count = author.get('follower_count', 0)
 
-        video_dict = {
-            "用户名": video_data['author']['nickname'].strip(),
-            "粉丝数量": video_data['author']['follower_count'],
-            "发表时间": get_time(video_data['create_time']),
-            "视频描述": video_data['desc'].strip().replace('\n', ''),
-            "视频链接": f"https://www.douyin.com/video/{video_data['aweme_id'].strip()}",
-            "视频时长": "{:02d}:{:02d}".format(minutes, seconds),
-            "点赞数量": video_data['statistics']['digg_count'],
-            "收藏数量": video_data['statistics']['collect_count'],
-            "评论数量": video_data['statistics']['comment_count'],
-            "下载数量": video_data['statistics']['download_count'],
-            "分享数量": video_data['statistics']['share_count']
-        }
+            create_time = get_time(video_data.get('create_time', 0))
+            video_desc = video_data.get('desc', '').strip().replace('\n', '')
 
-        self.video_count += 1
+            video_link = f"https://www.douyin.com/video/{aweme_id}" if aweme_id else '视频ID缺失，无法生成视频链接'
 
-        print(f"当前视频数量: {self.video_count}\n",
-            f"用户名：{video_dict['用户名']}\n",
-            f"粉丝数量：{video_dict['粉丝数量']}\n",
-            f"发表时间：{video_dict['发表时间']}\n",
-            f"视频描述：{video_dict['视频描述']}\n",
-            f"视频链接：{video_dict['视频链接']}\n",
-            f"视频时长：{video_dict['视频时长']}\n",
-            f"点赞数量：{video_dict['点赞数量']}\n",
-            f"评论数量：{video_dict['评论数量']}\n",
-            f"收藏数量：{video_dict['收藏数量']}\n",
-            f"下载数量：{video_dict['下载数量']}\n",
-            f"分享数量：{video_dict['分享数量']}\n"
-            )
+            duration = video_data.get('video', {}).get('duration', 0)
+            minutes = duration // 1000 // 60
+            seconds = duration // 1000 % 60
 
-        self.data_accumulator.append(video_dict)
-        if len(self.data_accumulator) >= 50:
-            file_name = f"{self.save_path}/{self.keyword}_videos.csv"
-            save_to_csv(self.data_accumulator, file_name, self.columns)
-            self.data_accumulator = []
+            statistics = video_data.get('statistics', {})
+            digg_count = statistics.get('digg_count', 0)
+            collect_count = statistics.get('collect_count', 0)
+            comment_count = statistics.get('comment_count', 0)
+            download_count = statistics.get('download_count', 0)
+            share_count = statistics.get('share_count', 0)
 
-    async def save_video(self, video_data: Dict) -> None:
-        video_url = video_data['video']['download_addr']['url_list'][-1]
-        video_id = video_data['aweme_id']
-        await asyncio.sleep(4)
+            video_dict = {
+                "用户名": user_name,
+                "粉丝数量": follower_count,
+                "发表时间": create_time,
+                "视频描述": video_desc,
+                "视频链接": video_link,
+                "视频时长": "{:02d}:{:02d}".format(minutes, seconds),
+                "点赞数量": digg_count,
+                "收藏数量": collect_count,
+                "评论数量": comment_count,
+                "下载数量": download_count,
+                "分享数量": share_count
+            }
 
-        response = await self.context.request.get(video_url, headers=self.headers)
-        video_content = await response.body()
-        check_path(f'{self.save_path}/{video_id}')
-        with open(f'{self.save_path}/{video_id}/{video_id}.mp4', 'wb') as file:
-            file.write(video_content)
+            self.video_count += 1
 
-    async def search_keyword(self, offset: int) -> List[Dict[str, any]]:
+            print(f"当前视频数量: {self.video_count}\n",
+                f"用户名：{video_dict['用户名']}\n",
+                f"粉丝数量：{video_dict['粉丝数量']}\n",
+                f"发表时间：{video_dict['发表时间']}\n",
+                f"视频描述：{video_dict['视频描述']}\n",
+                f"视频链接：{video_dict['视频链接']}\n",
+                f"视频时长：{video_dict['视频时长']}\n",
+                f"点赞数量：{video_dict['点赞数量']}\n",
+                f"评论数量：{video_dict['评论数量']}\n",
+                f"收藏数量：{video_dict['收藏数量']}\n",
+                f"下载数量：{video_dict['下载数量']}\n",
+                f"分享数量：{video_dict['分享数量']}\n"
+                )
+
+            self.data_accumulator.append(video_dict)
+            if len(self.data_accumulator) >= 50:
+                file_name = f"{self.save_path}/{self.keyword}_videos.csv"
+                await save_to_csv(self.data_accumulator, file_name, self.columns)
+                self.data_accumulator = []
+
+        except Exception as e:
+            print(f"处理视频数据时出错: {e}")
+
+    async def save_video(self, video_data: Dict, aweme_id: str) -> None:
+        try:
+            video_url = video_data.get('video', {}).get('download_addr', {}).get('url_list', [])
+            if not video_url:
+                print("视频下载地址不存在，跳过该视频")
+                return
+            video_url = video_url[-1]
+            await asyncio.sleep(4)
+            try:
+                response = await get_data(context=self.context, url=video_url, headers=self.headers, type='src')
+                video_content = await response.body()
+            except Exception as e:
+                print(f"下载视频失败 (aweme_id: {aweme_id}, url: {video_url}): {e}")
+                return
+
+            video_path = f'{self.save_path}/{aweme_id}'
+            check_path(video_path)
+            video_file_path = f'{video_path}/{aweme_id}.mp4'
+            try:
+                async with aiofiles.open(video_file_path, 'wb') as file:
+                    await file.write(video_content)
+                print(f"视频保存成功: {video_file_path}")
+            except Exception as e:
+                print(f"保存视频文件时出错 (aweme_id: {aweme_id}): {e}")
+        except Exception as e:
+            print(f"处理视频数据时出错: {e}")
+
+    async def search_keyword(self, offset: int=0) -> Dict[str, any]:
         url = 'https://www.douyin.com/aweme/v1/web/search/item/?'
         config = load_config()
         douyin_config = config.get('douyin', {})
+        is_filter_search = douyin_config.get('is_filter_search')
+        is_filter_search = validate_or_default(is_filter_search, valid_options=[0, 1], default=0)
+        publish_time = douyin_config.get('publish_time')
+        publish_time = validate_or_default(publish_time, valid_options=[0, 1, 7, 182], default=0)
+        sort_type = douyin_config.get('sort_type')
+        sort_type = validate_or_default(sort_type, valid_options=[0, 1, 2], default=0)
         params = {
             'aid': 6383,
             'channel': 'channel_pc_web',
             'search_channel': 'aweme_video_web',
             'keyword': self.keyword,
             'offset': offset,
-            'is_filter_search': douyin_config.get('is_filter_search'),
-            'publish_time': douyin_config.get('publish_time'),
-            'sort_type': douyin_config.get('sort_type'),
+            'is_filter_search': is_filter_search,
+            'publish_time': publish_time,
+            'sort_type': sort_type,
             'count': 16 if offset == 0 else 10,
         }
         await asyncio.sleep(4)
-        json_data = await get_data(self.context, url, self.headers, params)
-        return json_data
+        try:
+            json_data = await get_data(context=self.context, url=url, headers=self.headers, params=params)
+            return json_data
+        except asyncio.TimeoutError:
+            print("请求超时")
+            return {}
+        except Exception as e:
+            print(f"发生错误: {e}")
+            return {}
 
     async def fetch(self, start_offset: int=0) -> None:
         offset = start_offset
         count = 16 if offset == 0 else 10
         while True:
-            json_data = await self.search_keyword(offset)
-            for video_data in json_data['data']:
-                await self.save_video_info(video_data['aweme_info'])
-                await self.save_video(video_data['aweme_info'])
-            if json_data['has_more'] == 0:
-                break
-            offset += count
-            count = 10
+            try:
+                json_data = await self.search_keyword(offset)
+                video_data_dict = json_data.get('data')
+                if not video_data_dict:
+                    print(f"未获取到有效的视频数据(offset: {offset})")
+                    offset += count
+                    count = 10
+                    continue
+                for video_data in video_data_dict:
+                    try:
+                        if not video_data or 'aweme_info' not in video_data or not video_data['aweme_info']:
+                            print("视频数据无效或缺少 aweme_info，跳过该条数据")
+                            continue
+                        aweme_info = video_data['aweme_info']
+                        if isinstance(aweme_info, dict):
+                            aweme_id = aweme_info.get('aweme_id').strip()
+                            if not aweme_id:
+                                print("视频ID缺失，跳过该条数据")
+                                continue
+                        else:
+                            print(f"无效的视频信息数据类型：{aweme_info}")
+                            continue
+                        await self.save_video_info(aweme_info, aweme_id)
+                        await self.save_video(aweme_info, aweme_id)
+                    except Exception as e:
+                        print(f"处理视频数据时出错: {e}")
+                if json_data.get('has_more') == 0:
+                    break
+                offset += count
+                count = 10
+            except Exception as e:
+                print(f"获取关键词搜索数据时出错 (offset: {offset}): {e}")
+                offset += count
+                count = 10
+                continue
+        if self.data_accumulator:
+            try:
+                await save_to_csv(self.data_accumulator, f"{self.save_path}/{self.keyword}_videos.csv", self.columns)
+                self.data_accumulator = []
+            except Exception as e:
+                print(f"保存评论数据到CSV时出错: {e}")
 
     async def run(self) -> None:
-        if not self.keyword:
-            print("run after set")
-            return
-        check_path(f'{self.save_path}')
-        with open(f"{self.save_path}/{self.keyword}_videos.csv", "w", encoding="utf-8-sig", newline="") as f:
-            pass
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            self.context = await browser.new_context()
-            await self.fetch()
-            await browser.close()
-        if self.data_accumulator:
-            save_to_csv(self.data_accumulator, f"{self.save_path}/{self.keyword}_videos.csv", self.columns)
-            self.data_accumulator = []
+        try:
+            if not self.keyword or not self.save_path or not self.headers:
+                print("请先设置关键字、保存路径和请求头。")
+                return
+            check_path(f'{self.save_path}')
+            try:
+                with open(f"{self.save_path}/{self.keyword}_videos.csv", "w", encoding="utf-8-sig", newline="") as f:
+                    pass
+            except Exception as e:
+                print(f"创建文件{self.save_path}/{self.keyword}_videos.csv时出错: {e}")
+                return
+
+            async with async_playwright() as p:
+                try:
+                    browser = await p.chromium.launch(headless=True)
+                    self.context = await browser.new_context()
+                    await self.fetch()
+                except Exception as e:
+                    print(f"浏览器启动或运行过程中出错: {e}")
+                finally:
+                    await browser.close()
+        except Exception as e:
+            print(f"运行过程中发生错误: {e}")
 
 
 if __name__ == '__main__':
